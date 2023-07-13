@@ -163,6 +163,14 @@ class Graph(AbstractGraph):
         nk.graphio.writeGraph(towrite, p, nk.Format.EdgeListTabZero)
         return p
 
+    def as_compact_abc_edgelist_filepath(self):
+        """ Get a filepath to the graph as a compacted abc edgelist file """
+        p = context.request_graph_related_path(self, "edgelist")
+        towrite = nk.graphtools.getCompactedGraph(self._data, self.continuous_ids)
+        towrite.weigted = True
+        nk.graphio.writeGraph(towrite, p, nk.Format.EdgeListTabZero)
+        return p
+
     def degree(self, u):
         return self._data.degree(u)
 
@@ -351,6 +359,17 @@ class RealizedSubgraph(AbstractGraph):
                 for v in adj:
                     if u < v:
                         f.write(f"{u}\t{v}\n")
+        return p
+
+    def as_compact_abc_edgelist_filepath(self):
+        if self._dirty:
+            self.recompact()
+        p = context.request_graph_related_path(self, "edgelist")
+        with open(p, "w+") as f:
+            for u, adj in enumerate(self.compacted):
+                for v in adj:
+                    if u < v:
+                        f.write(f"{u}\t{v}\t1\trealized\n")
         return p
 
     def find_mincut(self) -> MincutResult:
