@@ -41,6 +41,7 @@ class Workflow:
                         self.existing_clustering[int(i)] = v
                     else:
                         self.existing_clustering[int(i)] = f'{self.working_dir}/{v}'
+
         except KeyError:
             self.existing_clustering = None
 
@@ -53,8 +54,13 @@ class Workflow:
             self.resolution = data['resolution'] if type(data['resolution']) == list else [data['resolution']]
         elif self.algorithm == 'leiden_mod':
             self.resolution = ['mod']
-        else:
+        elif self.algorithm == 'ikc':
             self.resolution = data['k'] if type(data['k']) == list else [data['k']]
+        elif self.algorithm == 'ikc':
+            self.resolution = data['inflation'] if type(data['inflation']) == list else [data['inflation']]
+        else:
+            # CLI parser should make it so that the program nevers gets here
+            raise Exception("Algorithm not implemented")
 
         # Get timestamp of algo run
         self.timestamp = datetime.now().strftime("%Y%m%d-%H:%M:%S")
@@ -75,8 +81,13 @@ class Workflow:
             if self.iterations:
                 for niter in self.iterations:
                     self.commands.append(f'mkdir -p res-{res}-i{niter}')
-            else:
+            elif self.algorithm == 'ikc':
                 self.commands.append(f'mkdir -p k-{res}')
+            elif self.algorithm == 'mcl':
+                self.commands.append(f'mkdir -p inflation-{res}')
+            else:
+                # CLI parser should make it so that the program nevers gets here
+                raise Exception("Algorithm not implemented")
 
         # Output the initialization stage finished
         self.commands = self.commands + [

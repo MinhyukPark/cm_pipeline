@@ -24,6 +24,11 @@ class Context:
         # (VR) path to IKC clusterer
         return "{project_root}/hm01/tools/ikc.py".format(project_root=PROJECT_ROOT)
 
+    @property
+    def mcl_path(self):
+        # path to MCL clusterer
+        return "{project_root}/hm01/tools/mcl/mcl".format(project_root=PROJECT_ROOT)
+
     def request_graph_related_path(self, graph, suffix):
         """ (VR) Get filepath to write intermediate graphs to
         

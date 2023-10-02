@@ -16,7 +16,9 @@ import sys
 # (VR) Change 2: I brought back context just for IKC
 from context import context
 from clusterers.ikc_wrapper import IkcClusterer
+from clusterers.infomap_wrapper import InfomapClusterer
 from clusterers.leiden_wrapper import LeidenClusterer, Quality
+from clusterers.mcl_wrapper import MCLClusterer
 from mincut_requirement import MincutRequirement
 from graph import Graph, IntangibleSubgraph, RealizedSubgraph
 from pruner import prune_graph
@@ -31,6 +33,8 @@ class ClustererSpec(str, Enum):
     leiden = "leiden"
     ikc = "ikc"
     leiden_mod = "leiden_mod"
+    mcl = "mcl"
+    infomap = "infomap"
 
 def annotate_tree_node(
     node: ClusterTreeNode, graph: Union[Graph, IntangibleSubgraph, RealizedSubgraph]
@@ -105,6 +109,13 @@ def par_task(stack, node_mapping, node2cids):
 
         # (VR) Pruning: Remove singletons with node degree under threshold until there exists none
         num_pruned = prune_graph(subgraph, requirement, clusterer)
+        if subgraph.n() <= 1:
+            # somehow all nodes have been pruned away and the graph is empty or has one node
+            tree_node.cut_size = 0
+            tree_node.extant = False
+            tree_node.valid = False
+            tree_node.validity_threshold = 0
+            continue
         if num_pruned > 0:
             # (VR) Set the cluster cut size to the degree of the removed node
             tree_node.cut_size = original_mcd
@@ -263,11 +274,13 @@ def algorithm_g(
 
 def main(
     input: str = typer.Option(..., "--input", "-i", help="The input network."),
-    existing_clustering: str = typer.Option(..., "--existing-clustering", "-e", help="The existing clustering of the input network to be reclustered."),
+    existing_clustering: str = typer.Option("", "--existing-clustering", "-e", help="The existing clustering of the input network to be reclustered."),
     quiet: Optional[bool] = typer.Option(False, "--quiet", "-q", help="Silence output messages."), # (VR) Change: Removed working directory parameter since no FileIO occurs during runtime anymore
+    working_dir: Optional[str] = typer.Option("", "--working-dir", "-d"),
     clusterer_spec: ClustererSpec = typer.Option(..., "--clusterer", "-c", help="Clustering algorithm used to obtain the existing clustering."),
     k: int = typer.Option(-1, "--k", "-k", help="(IKC Only) k parameter."),
     resolution: float = typer.Option(-1, "--resolution", "-g", help="(Leiden Only) Resolution parameter."),
+    inflation: float = typer.Option(-1, "--inflation", "-l", help="(MCL Only) Inflation factor."),
     threshold: str = typer.Option("", "--threshold", "-t", help="Connectivity threshold which all clusters should be above."),
     output: str = typer.Option("", "--output", "-o", help="Output filename."),
     cores: int = typer.Option(4, "--nprocs", "-n", help="Number of cores to run in parallel."),
@@ -289,13 +302,21 @@ def main(
     elif clusterer_spec == ClustererSpec.leiden_mod:
         assert resolution == -1, "Leiden with modularity does not support resolution"
         clusterer = LeidenClusterer(resolution, quality=Quality.modularity)
-    else:
+    elif clusterer_spec == ClustererSpec.ikc:
         assert k != -1, "IKC requires k"
         clusterer = IkcClusterer(k)
+    elif clusterer_spec == ClustererSpec.mcl:
+        assert inflation != -1, "MCL requires inflation factor"
+        clusterer = MCLClusterer(inflation)
+    elif clusterer_spec == ClustererSpec.infomap:
+        clusterer = InfomapClusterer()
 
     # (VR) Change get working dir iff IKC
     if isinstance(clusterer, IkcClusterer):
         context.with_working_dir(input.split('/')[-1] + "_working_dir")
+
+    if isinstance(clusterer, MCLClusterer):
+        context.with_working_dir(input.split('/')[-1] + "_working_dir" if not working_dir else working_dir)
 
     # (VR) Start hm01
     if not quiet:
@@ -327,9 +348,16 @@ def main(
     global_graph = Graph(nk_graph, "")
 
     # (VR) Load clustering
-    if not quiet:
-        log.info(f"loading existing clustering before algorithm-g", clusterer=clusterer)
-    clusters = clusterer.from_existing_clustering(existing_clustering)
+
+    if not existing_clustering:
+        if not quiet:
+            log.info(f"running clusterer before algorithm-g", clusterer=clusterer)
+        clusters = list(clusterer.cluster_without_singletons(global_graph))
+    else:
+        if not quiet:
+            log.info(f"loading existing clustering before algorithm-g", clusterer=clusterer)
+        clusters = clusterer.from_existing_clustering(existing_clustering)
+
     if not quiet:
         log.info(
             f"first round of clustering obtained",
